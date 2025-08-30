@@ -1,0 +1,19 @@
+---
+
+ - hosts: all
+   become: true
+   tasks:
+     - name: Copy useradd.sh file
+       ansible.builtin.copy:
+         src: /tmp/user_management/useradd.sh
+         dest: /tmp/useradd.sh
+         owner: root
+         group: root
+         mode: '0644'
+     - name: Copy key file
+       ansible.builtin.copy:
+         src: /tmp/key.pub
+         dest: /tmp/key.pub
+         mode: '0400'
+     - name: Run useradd.sh script
+       command: "sudo bash /tmp/useradd.sh {{ user }} {{ sudo  }}"

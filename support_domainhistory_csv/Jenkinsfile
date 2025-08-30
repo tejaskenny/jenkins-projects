@@ -1,0 +1,69 @@
+node{
+    wrap([$class: 'BuildUser']) {
+        currentUser = env.BUILD_USER_ID
+    }
+}
+pipeline{
+    agent any
+    stages{
+        stage('clear workspace'){
+            steps{
+                step([$class: 'WsCleanup'])
+            }
+        }
+	stage('Domain Name') {
+		steps {
+			script{
+                            env.dname = input message: 'Please enter Domain Name ',
+                             parameters: [string(defaultValue: '',
+                                          description: '',
+                                          name: 'dname')]
+                        }
+    }
+}
+    stage('Get Script file from gitlab')
+    {
+        steps 
+        {
+            sh "git clone http://devops:ym8mQ5mEGeKENXvPd6E@versioncontrol.vertoz.com/devops_systems/jenkins/support_domainhistory_csv.git"
+        }
+    }
+    stage ('Copy script to server'){
+            steps {
+                sh "scp -i /opt/jenkins-key/jenkins -P 22 support_domainhistory_csv/Domainhistory_csv.sh cradmin@54.221.64.153:/tmp"
+            }
+    }
+    stage ('Executing script'){
+        steps {
+           sh "ssh -i /opt/jenkins-key/jenkins -p 22 cradmin@54.221.64.153 'sudo bash /tmp/Domainhistory_csv.sh ${dname}'" 
+           sh "scp -i /opt/jenkins-key/jenkins -P 22 cradmin@54.221.64.153:/tmp/domainhistory.zip ."
+        }
+    }
+    stage ('send mail of csv'){
+        steps {
+            sh "bash support_domainhistory_csv/mail_domainhistory.sh  ${dname}"
+        }
+    }
+
+}
+post{
+          
+            always{
+                emailext attachLog: true,
+                to: 'devops@vertoz.com',
+                subject: "Status of pipeline: ${currentBuild.fullDisplayName} ${currentBuild.result}",
+                body: """
+ 
+
+Build
+    Name        : ${env.JOB_NAME}
+    URL         : ${env.BUILD_URL}
+    Executed By : ${currentUser}
+    Result      : ${currentBuild.result}
+    
+Please find attachment of current build output."""
+            }
+
+    }
+
+}

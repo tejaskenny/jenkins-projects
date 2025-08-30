@@ -1,0 +1,249 @@
+pipeline{
+    agent any
+    stages{
+        stage('clear workspace'){
+            steps{
+                step([$class: 'WsCleanup'])
+            }
+        }
+
+
+            stage('gitfetch'){
+                steps{
+                    git branch: 'release', changelog: false, credentialsId: 'ipjenkins', poll: false, url: 'http://versioncontrol.vertoz.com/ConnectReseller/ConnectReseller.git'
+                }
+            }
+        stage('Get Script file from gitlab'){
+            steps{
+                sh 'git clone http://devops:ym8mQ5mEGeKENXvPd6E@versioncontrol.vertoz.com/devops_systems/jenkins/cr-tomcat-api-war.git'
+            }
+        }   
+           stage("APPROVAL"){
+                steps{
+                    input "Match the commit id"
+                }
+            }
+            stage('maven build'){
+                steps {
+                    sh 'mvn clean install'
+                    sh 'md5sum target/ConnectReseller-0.0.1-SNAPSHOT.war'
+                    sh 'mv target/ConnectReseller-0.0.1-SNAPSHOT.war ConnectReseller.war'
+                }
+            }
+        stage('check variable'){
+            steps{
+                script{
+                    Tomcat=sh(
+                        script: 'sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1 ec2 describe-tags --filters Name=resource-id,Values=$(sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1 elb describe-load-balancers --load-balancer-name  lbapi  --query "LoadBalancerDescriptions[*].Instances[*].[InstanceId]" | grep -Eo "[a-zA-Z0-9-]+")  --query "Tags[*].Value[]" |grep -Eo "[a-zA-Z0-9-]+"',
+                        returnStdout: true
+                    ).trim()
+                    echo " Current Traffic on  ${Tomcat}"
+                }
+            }
+        }
+        stage ('Deploy Tomcat1'){
+            when{
+                expression { Tomcat == 'Tomcat2' }
+            }
+            steps{
+                input "Deoloying  on Tomcat1"
+            }
+        }
+        stage ('Deploy Tomcat2'){
+            when{
+                expression { Tomcat == 'Tomcat1' }
+            }
+            steps{
+                input "Deoloying  on Tomcat2"
+            }
+        }
+  
+        stage("Uploading files on Tomcat 1"){
+            when{
+                expression { Tomcat == 'Tomcat2' }
+            }
+            steps{
+                sh 'sudo scp -o StrictHostKeyChecking=no  -i /opt/jenkins-key/jenkins -P 22  cr-tomcat-api-war/CR-Tomcat-Api-War-Deployment.sh  cradmin@34.235.189.98:/tmp'
+                sh 'sudo scp -o StrictHostKeyChecking=no  -i /opt/jenkins-key/jenkins -P 22  ConnectReseller.war cradmin@34.235.189.98:/tmp/'   
+            }
+        }
+        stage("Uploading files on Tomcat 2"){
+            when{
+                expression { Tomcat == 'Tomcat1' }
+            }
+            steps{
+                sh 'sudo scp -o StrictHostKeyChecking=no  -i /opt/jenkins-key/jenkins -P 22  cr-tomcat-api-war/CR-Tomcat-Api-War-Deployment.sh cradmin@54.166.174.78:/tmp'           
+                sh 'sudo scp -o StrictHostKeyChecking=no  -i /opt/jenkins-key/jenkins -P 22  ConnectReseller.war cradmin@54.166.174.78:/tmp/'
+            }
+        }
+                    
+        stage('Backup on Tomcat 1 ') {
+            when{
+                allOf{
+                expression {params.Backup}
+                expression { Tomcat == 'Tomcat2' }
+                }
+            }
+            steps {
+                sh "sudo ssh -o StrictHostKeyChecking=no -i /opt/jenkins-key/jenkins -p 22 cradmin@34.235.189.98 'sudo bash /tmp/CR-Tomcat-Api-War-Deployment.sh backup'"
+            }
+        }
+        stage('Backup on Tomcat 2') {
+            when{
+                allOf{
+                expression {params.Backup}
+                expression { Tomcat == 'Tomcat1' }
+                }
+            }
+            steps {
+
+                sh 'sudo ssh -o StrictHostKeyChecking=no -i /opt/jenkins-key/jenkins -p 22 cradmin@54.166.174.78 "sudo bash /tmp/CR-Tomcat-Api-War-Deployment.sh backup"'
+            }
+        }
+                    
+            
+
+        stage("Deploying on Tomcat1"){
+            when{
+                expression { Tomcat == 'Tomcat2' }
+            }
+            steps{
+                
+                sh 'sudo ssh -o StrictHostKeyChecking=no -i /opt/jenkins-key/jenkins -p 22 cradmin@34.235.189.98 "sudo bash /tmp/CR-Tomcat-Api-War-Deployment.sh deployment"'
+            }
+                    
+        }
+        stage("Deploying on Tomcat2"){
+            when{
+                expression { Tomcat == 'Tomcat1' }
+            }
+            steps{
+                sh 'sudo ssh -o StrictHostKeyChecking=no -i /opt/jenkins-key/jenkins -p 22 cradmin@54.166.174.78 "sudo bash /tmp/CR-Tomcat-Api-War-Deployment.sh deployment"'
+                }
+                    
+        }
+        stage ("Verifying Catout logs on Tomcat1"){
+            when{
+                expression { Tomcat == 'Tomcat2' }
+            }
+            steps{
+                sh 'sudo ssh -o StrictHostKeyChecking=no -i /opt/jenkins-key/jenkins -p 22 cradmin@34.235.189.98 "sudo bash /tmp/CR-Tomcat-Api-War-Deployment.sh check_catout_logs"'
+                }
+        }
+        stage ("Verifying Catout logs on Tomcat2"){
+            when{
+                expression { Tomcat == 'Tomcat1' }
+            }
+            steps{
+                sh 'sudo ssh -o StrictHostKeyChecking=no -i /opt/jenkins-key/jenkins -p 22 cradmin@54.166.174.78 "sudo bash /tmp/CR-Tomcat-Api-War-Deployment.sh check_catout_logs"'
+                }
+        }
+        stage ('Approve: Attach Tomcat2'){
+            when{
+                expression { Tomcat == 'Tomcat1' }
+            }
+            steps{
+                input "Attach Tomcat2  on LB"
+            }
+        }
+        stage ('Approve: Attach Tomcat1'){
+            when{
+                expression { Tomcat == 'Tomcat2' }
+            }
+            steps{
+                input "Attach Tomcat1  on LB"
+            }
+        }
+        stage("attach Tomcat1 on LB"){
+            when{
+                expression { Tomcat == 'Tomcat2' }
+            }
+            steps{
+                sh 'sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1 elb register-instances-with-load-balancer --load-balancer-name  lbapi  --instances $(sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1 ec2 describe-tags --filters Name=value,Values=Tomcat1  --query "Tags[*].ResourceId[]" |grep -Eo "[a-zA-Z0-9-]+")'
+            }
+        }
+        stage("attach Tomcat2 on LB"){
+            when{
+                expression { Tomcat == 'Tomcat1' }
+            }
+            steps{
+                sh 'sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1 elb register-instances-with-load-balancer --load-balancer-name  lbapi  --instances $(sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1 ec2 describe-tags --filters Name=value,Values=Tomcat2  --query "Tags[*].ResourceId[]" |grep -Eo "[a-zA-Z0-9-]+")'
+            }
+        }
+        stage("Check  Instance status of Tomcat1"){
+            when{
+                expression { Tomcat == 'Tomcat2' }
+            }
+            steps{
+                sh 'sudo timeout 1m bash /opt/jenkins-scripts/CR-Tomcat-Api-War/CR-Tomcat-Api-War-Deployment.sh checkstatus $(sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1 ec2 describe-tags --filters Name=value,Values=Tomcat1  --query "Tags[*].ResourceId[]" |grep -Eo "[a-zA-Z0-9-]+")'
+            }
+        }
+        stage("Check  Instance status of Tomcat2"){
+            when{
+                expression { Tomcat == 'Tomcat1' }
+            }
+            steps{
+                sh 'sudo timeout 1m bash /opt/jenkins-scripts/CR-Tomcat-Api-War/CR-Tomcat-Api-War-Deployment.sh checkstatus $(sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1 ec2 describe-tags --filters Name=value,Values=Tomcat2  --query "Tags[*].ResourceId[]" |grep -Eo "[a-zA-Z0-9-]+")'
+            }
+        }
+
+        stage ('Deattach Tomcat2'){
+            when{
+                expression { Tomcat == 'Tomcat2' }
+            }
+            steps{
+                input "Deattach Tomcat2"
+            }
+        }
+        stage ('Deattach Tomcat1'){
+            when{
+                expression { Tomcat == 'Tomcat1' }
+            }
+            steps{
+                input "Deattach  Tomcat1"
+            }
+        }
+        stage("Deattach Tomcat1 from LB"){
+            when{
+                expression { Tomcat == 'Tomcat1' }
+            }
+            steps{
+                sh 'sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1  elb deregister-instances-from-load-balancer --load-balancer-name  lbapi  --instances $(sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1 ec2 describe-tags --filters Name=value,Values=Tomcat1  --query "Tags[*].ResourceId[]" |grep -Eo "[a-zA-Z0-9-]+")'
+            }
+        }
+        stage("Deattach Tomcat2 from LB"){
+            when{
+                expression { Tomcat == 'Tomcat2' }
+            }
+            steps{
+                sh 'sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1  elb deregister-instances-from-load-balancer --load-balancer-name  lbapi  --instances $(sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1 ec2 describe-tags --filters Name=value,Values=Tomcat2  --query "Tags[*].ResourceId[]" |grep -Eo "[a-zA-Z0-9-]+")'
+            }
+        }
+
+        stage ("Check Status behind LB"){
+            steps{
+                sh "sleep 10; sudo /usr/local/bin/aws --profile=devops-cr --region=us-east-1  elb describe-instance-health  --load-balancer-name lbapi"
+            }
+        }
+        stage ("Verify golbal url "){
+            steps{
+            sh "sleep 10; sudo curl 'https://api.connectreseller.com/ConnectReseller/country/IN' "
+            }
+        }
+    }
+
+post{
+            unsuccessful{
+                mail to: 'devops@vertoz.com',
+                subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+                body: "${env.BUILD_URL} has result ${currentBuild.result}"
+            }
+            
+            success{
+                mail to: 'devops@vertoz.com',
+                subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+                body: "${env.BUILD_URL} has result ${currentBuild.result}"
+            }
+    }
+}
+

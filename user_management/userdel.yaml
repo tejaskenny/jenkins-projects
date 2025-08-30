@@ -1,0 +1,14 @@
+---
+
+ - hosts: all
+   become: true
+   tasks:
+     - name: Copy userdel.sh file
+       ansible.builtin.copy:
+         src: /tmp/user_management/userdel.sh
+         dest: /tmp/userdel.sh
+         owner: root
+         group: root
+         mode: '0644'
+     - name: Run userdel.sh script
+       command: "sudo bash /tmp/userdel.sh {{ user }} "

@@ -1,0 +1,47 @@
+pipeline {
+  agent any
+  stages {
+    stage("Take backup path"){
+      steps {
+        script {
+          env.BIDDER_BACKUP_PATH = input message: 'Please enter the Absolute backup path ',
+                             parameters: [string(defaultValue: '',
+                                          description: '',
+                                          name: 'ABSOLUTE PATH')]
+                }
+            }
+        }
+        stage("Checking the file path"){
+            steps{
+                sh "ssh -i /opt/jenkins-key/jenkins -p 7559 root@172.16.10.5 'ls ${env.BIDDER_BACKUP_PATH}'"
+            }
+                
+            }
+            stage('copying redeployment script'){
+
+                steps{
+                    sh "scp -i /opt/jenkins-key/jenkins -P 7559 /opt/jenkins-scripts/live-api-revert.sh root@172.16.10.5:/tmp"
+                    
+                }
+            }
+            stage('Redeployment Process'){
+                steps{
+                    sh "ssh -i /opt/jenkins-key/jenkins -p 7559 root@172.16.10.5 'bash /tmp/live-api-revert.sh ${env.BIDDER_BACKUP_PATH} '"
+                }
+            }
+        }
+    post{
+                unsuccessful{
+                  mail to: 'devops@vertoz.com',
+                  subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+                  body: "${env.BUILD_URL} has result ${currentBuild.result}"
+                }
+                
+                success{
+                  mail to: 'devops@vertoz.com',
+                  subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+                  body: "${env.BUILD_URL} has result ${currentBuild.result}"
+                }
+        }
+
+        }

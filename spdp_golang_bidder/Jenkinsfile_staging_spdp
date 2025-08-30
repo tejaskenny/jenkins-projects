@@ -1,0 +1,141 @@
+pipeline{
+    agent any
+    environment {
+        GO114MODULE = 'on'
+    }
+    parameters {
+        choice(
+            choices: ['spdp-nginx-vertoz','spdp-nginx-adcanny' , 'spdp-nginx-flairads', 'spdp-nginx-adzesto','spdp-nginx-admeridian','spdp-nginx-hueadsortb','spdp-nginx-boffoads','spdp-nginx-adokut','spdp-nginx-vaaya','spdp-nginx-admida','ALL'],
+            name: 'WhichNginx')
+
+        }
+stages{
+    stage('gitfetch'){
+        steps{
+            git branch: 'release', credentialsId: 'bidderjenkins', url: 'http://versioncontrol.vertoz.com/SPDP/spdp-golang-server.git'
+        }
+    }
+    stage("APPROVAL"){
+        steps{
+                input "Match the commit id"
+                                                                
+            }
+        }
+    stage('build'){
+		steps{
+		    sh 'export PATH=$PATH:/usr/local/go/bin/  && export GOROOT=/usr/local/go  && go build spdp/bidder/server/bidderServer.go'
+ 		  }
+        }
+    stage('Uploading files'){
+        steps{
+        sh '''
+        md5sum bidderServer
+        cp bidderServer /home2/backup/SPDP-bidder/bidderServer
+        scp -i /opt/jenkins-key/jenkins -P 7559  bidderServer jenkins@192.168.80.199:/tmp
+        '''
+        }
+    }
+
+    stage('Deployment on spdp-nginx-vertoz bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'spdp-nginx-vertoz' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=192.168.60.165"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+    stage('Deployment on spdp-nginx-adcanny bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'spdp-nginx-adcanny' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=192.168.60.155"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+    stage('Deployment on spdp-nginx-flairads bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'spdp-nginx-flairads' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=192.168.60.187"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+    stage('Deployment on spdp-nginx-adzesto bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'spdp-nginx-adzesto' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=192.168.60.195"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+    stage('Deployment on spdp-nginx-admeridian bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'spdp-nginx-admeridian' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=192.168.60.140"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+    stage('Deployment on spdp-nginx-hueadsortb bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'spdp-nginx-hueadsortb' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=192.168.60.179"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+    stage('Deployment on spdp-nginx-boffoads bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'spdp-nginx-boffoads' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=192.168.60.143"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+    stage('Deployment on spdp-nginx-adokut bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'spdp-nginx-adokut' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=192.168.60.193"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+    stage('Deployment on spdp-nginx-vaaya bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'spdp-nginx-vaaya' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=192.168.60.137"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+    stage('Deployment on spdp-nginx-admida bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'spdp-nginx-admida' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=192.168.60.148"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+    stage('Deployment on all staging bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'ALL' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/SPDP/spdp_staging_host --extra-vars "host=staging"  /home2/bidder-deployment/SPDP/spdp_bidder_deployment.yml"' 
+        }
+    }
+      
+  }
+
+}

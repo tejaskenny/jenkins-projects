@@ -1,0 +1,132 @@
+node{
+    wrap([$class: 'BuildUser']) {
+        currentUser = env.BUILD_USER_ID
+    }
+}
+pipeline{
+    agent any
+    stages{
+        stage('clear workspace'){
+            steps{
+                step([$class: 'WsCleanup'])
+            }
+        }
+    stage('Get Script file from gitlab')
+    {
+        steps 
+        {
+            sh "git clone http://devops:ym8mQ5mEGeKENXvPd6E@versioncontrol.vertoz.com/devops_systems/jenkins/support_cr-ssl.git"
+        }
+    }
+
+        stage("Enter Domain Name"){
+                steps{
+                    script{
+                            env.dname = input message: 'Please enter Domain Name ',
+                             parameters: [string(defaultValue: '',
+                                          description: '',
+                                          name: 'dname')]
+                        }
+                    }
+                }
+        stage("Validate Domain"){
+            steps{
+                sh ' bash support_cr-ssl/cr-ssl-domain-verify.sh ${dname} '
+                }
+            }
+            
+        
+        stage('Upload CRT File'){
+            steps{
+                script{
+                    env.CRTFILE=input message: 'Upload CRT file', 
+                    parameters: [file(name: 'domain-crt',
+                     description: '')]
+                    }
+                }            
+            }
+        stage('Upload Key File'){
+
+            steps{
+                script{
+                    env.KEYFILE=input message: 'Upload Key file', 
+                    parameters: [file(name: 'domain-key',
+                     description: '')]
+                    }
+                }
+            }
+            stage('Upload CA Bundle File'){
+
+                steps{
+                    script{
+                        env.CAFILE=input message: 'Upload CA bundle file', 
+                        parameters: [file(name: 'domain-ca',
+                         description: '')]
+                    }
+                }  
+            }
+            stage("Check output"){
+                steps{
+                    sh 'ls /var/lib/jenkins/jobs/${JOB_NAME}/builds/${BUILD_NUMBER}/domain*'
+                    sh 'mkdir ssl-${dname}'
+                    sh 'cp /var/lib/jenkins/jobs/${JOB_NAME}/builds/${BUILD_NUMBER}/domain* ssl-${dname}'
+                }
+            }
+            stage('Upload the files and scripts'){
+                steps{
+                    sh '''
+                    
+                    scp -o StrictHostKeyChecking=no  -r -i /opt/jenkins-key/jenkins ssl-${dname}   cradmin@52.203.60.100:/tmp/
+                    scp -o StrictHostKeyChecking=no -i /opt/jenkins-key/jenkins support_cr-ssl/cr-ssl_custormconf.sh cradmin@52.203.60.100:/tmp/
+                    '''
+                }
+            }
+
+            stage('Create Custorm Conf'){
+                steps{
+                    sh "ssh -o StrictHostKeyChecking=no -i /opt/jenkins-key/jenkins  cradmin@52.203.60.100  'sudo bash /tmp/cr-ssl_custormconf.sh ${dname}'"
+                }
+            }
+
+            stage('Check Httpd status'){
+                steps{
+                    sh 'ssh -o StrictHostKeyChecking=no -i /opt/jenkins-key/jenkins   cradmin@52.203.60.100  "sudo httpd -t"'
+                }
+            }
+            stage("Approve to reload"){
+                steps{
+                    input "Proceed to Reload httpd service"
+                                                                
+                }
+            }
+            stage('Reload Httpd service'){
+                steps{
+                    sh 'ssh -o StrictHostKeyChecking=no -i /opt/jenkins-key/jenkins   cradmin@52.203.60.100  "sudo service httpd reload"'
+                }
+            }
+    }
+post{
+          
+            always{
+                emailext attachLog: true,
+                to: 'devops@vertoz.com',
+                subject: "Status of pipeline: ${currentBuild.fullDisplayName} ${dname}  ${currentBuild.result}",
+                body: """
+
+
+Domain
+    Name        : ${dname}
+
+Build
+    Name        : ${env.JOB_NAME}
+    URL         : ${env.BUILD_URL}
+    Executed By : ${currentUser}
+    Result      : ${currentBuild.result}
+    
+Please find attachment of current build output."""
+            }
+
+    }
+}
+    
+        

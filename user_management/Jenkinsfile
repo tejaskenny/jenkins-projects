@@ -1,0 +1,92 @@
+    pipeline{
+        agent any
+        environment{
+        
+        BRANCH='release'
+        }
+        stages{
+            stage('clear workspace'){
+                steps{
+                    step([$class: 'WsCleanup'])
+                }
+            }
+            stage('Clone all the git files'){
+                steps{
+                    sh '''
+                    git clone http://devops:ym8mQ5mEGeKENXvPd6E@versioncontrol.vertoz.com/devops_systems/jenkins/user_management.git  
+                    git clone http://devops:ym8mQ5mEGeKENXvPd6E@versioncontrol.vertoz.com/infrainventory/ssh-keys.git
+                    '''
+                }
+            }
+
+            stage('Upload files to ansible'){
+                steps{
+                    sh '''
+                    scp -r -i /opt/jenkins-key/jenkins -P 7559  user_management  root@192.168.80.199:/tmp
+                    '''
+                }
+            }
+            stage('Upload the ssh key'){
+                when {expression{params.TASK_ON_USER == "create"}}
+                steps{
+                    sh 'scp -i /opt/jenkins-key/jenkins -P 7559  ssh-keys/${ChoosePublicKey}  root@192.168.80.199:/tmp/key.pub'
+                }
+            }
+            stage('Create ansible host file'){
+                steps{
+                    sh 'ssh -i /opt/jenkins-key/jenkins -p 7559   root@192.168.80.199 "sudo bash /tmp/user_management/create_host.sh ${ServerIP} ${Login_SSH_Port} ${Login_Key} ${Login_User}"'
+                }
+            }
+            stage('Check SSH Connection'){
+                steps{
+                    sh 'ssh -i /opt/jenkins-key/jenkins -p 7559   root@192.168.80.199 "sudo ansible-2 -i /tmp/temp_hostfile all -m ping -o "'
+                }
+            }
+            stage('Approve'){
+                steps{
+                    input ""
+                }
+            }
+
+            stage('Create User'){
+                when {expression{params.TASK_ON_USER == "create"}}
+                steps{
+                    sh 'ssh -i /opt/jenkins-key/jenkins -p 7559   root@192.168.80.199 "sudo ansible-playbook-2 -i /tmp/temp_hostfile --extra-vars="user"="${User_name}" --extra-vars="sudo"="${Sudo_Access}" /tmp/user_management/useradd.yaml"'
+                    
+                }
+            }
+            stage('Delete User'){
+                when {expression{params.TASK_ON_USER == "delete"}}
+                steps{
+                    sh 'ssh -i /opt/jenkins-key/jenkins -p 7559   root@192.168.80.199 "sudo ansible-playbook-2 -i /tmp/temp_hostfile --extra-vars="user"="${User_name}" /tmp/user_management/userdel.yaml"'
+                }
+            }
+        }
+    post{
+
+                unsuccessful{
+                  mail to: 'devops@vertoz.com',
+                  subject: "${TASK_ON_USER} User:  ${User_name}  on server ${ServerIP}| FAILED",
+                  body: """Hello Team,
+Failed to create User ${User_name} on server ${ServerIP} 
+                  
+                  """
+                }
+                
+                success{
+                  mail to: 'devops@vertoz.com',
+                  subject: "${TASK_ON_USER} User:  ${User_name}  on server ${ServerIP}| SUCCESS",
+                  body: """ Hello Team,
+Sucessfully ${TASK_ON_USER}d User ${User_name} on server ${ServerIP} , below are the user details.
+
+Name        : ${User_name}
+Key         : ${ChoosePublicKey}
+Sudo access : ${Sudo_Access}
+
+Thank You
+System Team
+
+                  """
+              }
+        }
+    }

@@ -1,0 +1,87 @@
+pipeline{
+    agent any
+        parameters {
+            choice(
+                choices: ['yes' , 'no'],
+                description: 'Do You Want To Take API BACKUP',
+                name: 'BACKUP'
+            )
+        }
+    stages{
+    stage('gitfetch'){
+        steps{
+            git branch: 'release', changelog: false, credentialsId: 'ipjenkins', poll: false, url: 'http://versioncontrol.vertoz.com/console_api/vertoz-spdp.git'
+            
+        }
+    }
+    stage("APPROVAL"){
+        steps{
+                input "Match the commit id"
+                                                                
+            }
+        }
+
+
+    stage('build'){
+		steps{
+		  sh 'mvn clean install -DskipTests'
+ 		  }
+        }
+    stage('Sending  Console Down Skype Message'){
+        steps{
+            sh 'sudo bash /opt/jenkins-scripts/SkypeConsoleDown.sh &'
+        }
+    }
+    stage('Uploading files'){
+        steps{
+        sh '''
+        md5sum target/vertoz-spdp-0.0.1-SNAPSHOT.jar
+        scp -i /opt/jenkins-key/jenkins -P 7559  target/vertoz-spdp-0.0.1-SNAPSHOT.jar root@172.16.10.5:/tmp
+        scp -i /opt/jenkins-key/jenkins -P 7559  /opt/jenkins-scripts/live-api-deployment.sh root@172.16.10.5:/tmp
+        scp -i /opt/jenkins-key/jenkins -P 7559  /opt/jenkins-scripts/live-api-backup.sh root@172.16.10.5:/tmp
+        ssh -i /opt/jenkins-key/jenkins -p 7559 root@172.16.10.5 "cp -f /tmp/live-api-deployment.sh /root/"
+        ssh -i /opt/jenkins-key/jenkins -p 7559 root@172.16.10.5 "cp -f /tmp/live-api-backup.sh /root/"
+        '''
+        }
+    }
+    stage('BackUP'){
+        when{
+            expression { params.BACKUP == 'yes' }
+        }
+        steps{
+            sh 'ssh -i /opt/jenkins-key/jenkins -p 7559 root@172.16.10.5 "bash /root/live-api-backup.sh"'
+        }
+    }
+    
+    stage('Deployment'){
+        steps{
+        sh '''
+        ssh -i /opt/jenkins-key/jenkins -p 7559 root@172.16.10.5 " md5sum /tmp/vertoz-spdp-0.0.1-SNAPSHOT.jar"
+
+         ssh -i /opt/jenkins-key/jenkins -p 7559 root@172.16.10.5 "bash /root/live-api-deployment.sh"
+        '''
+            }
+        
+       }
+    stage('Sending  Console Up Skype Message'){
+        steps{
+            sh 'sudo bash /opt/jenkins-scripts/SkypeConsoleUp.sh &'
+        }
+    }
+    }
+    post{
+
+                unsuccessful{
+                  mail to: 'devops@vertoz.com',
+                  subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+                  body: "${env.BUILD_URL} has result ${currentBuild.result}"
+                }
+                
+                success{
+                  mail to: 'devops@vertoz.com',
+                  subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+                  body: "${env.BUILD_URL} has result ${currentBuild.result}"
+              }
+        }  
+
+}

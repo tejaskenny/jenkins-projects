@@ -1,0 +1,85 @@
+
+pipeline{
+  agent any
+
+   environment {
+        GO114MODULE = 'on'
+  }
+    parameters {
+        choice(
+            choices: ['xml-nginx-admida' , 'xml-nginx-admozart', 'xml-nginx-adcanny','ALL'],
+            name: 'WhichNginx')
+
+        }
+stages{
+
+    stage('gitfetch'){
+        steps{
+            git branch: 'release', credentialsId: 'bidderjenkins', url: 'http://versioncontrol.vertoz.com/SPDP/spdp-xml-biddder-server.git'
+        }
+    }
+    stage("APPROVAL"){
+        steps{
+                input "Match the commit id"
+                                                                
+            }
+        }
+
+    stage('build'){
+		steps{
+		    sh 'export PATH=$PATH:/usr/local/go/bin/  && export GOROOT=/usr/local/go  && go build xml/ssp/server/spdp-xml-server.go'
+ 		  }
+        }
+    stage('Uploading files'){
+
+        steps{
+        sh '''
+        md5sum spdp-xml-server
+        sudo cp spdp-xml-server /home2/backup/XML-bidder/spdp-xml-server
+        scp -i /opt/jenkins-key/jenkins -P 7559  spdp-xml-server  jenkins@192.168.80.199:/tmp
+        
+        '''
+        }
+    }
+    stage('Deploy on xml-nginx-admida Bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'xml-nginx-admida' }
+        }
+        steps{
+            sh 'ssh  -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/XML/xml_staging_host --extra-vars "host=192.168.60.7" /home2/bidder-deployment/XML/xml_bidder_deployment.yml"'
+        }
+    }
+    stage('Deploy on xml-nginx-admozart Bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'xml-nginx-admozart' }
+        }
+        steps{
+            sh 'ssh  -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/XML/xml_staging_host --extra-vars "host=192.168.60.12" /home2/bidder-deployment/XML/xml_bidder_deployment.yml"'
+        }
+    }
+    stage('Deploy on xml-nginx-adcanny Bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'xml-nginx-adcanny' }
+        }
+        steps{
+            sh 'ssh  -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/XML/xml_staging_host --extra-vars "host=192.168.60.22" /home2/bidder-deployment/XML/xml_bidder_deployment.yml"'
+        }
+    }    
+    stage('Deploy on ALL staging Bidder'){
+        when {
+            
+            expression { params.WhichNginx == 'ALL' }
+        }
+        steps{
+            sh 'ssh  -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/XML/xml_staging_host --extra-vars "host=all" /home2/bidder-deployment/XML/xml_bidder_deployment.yml"'
+        }
+    }
+
+
+      
+  }
+
+}

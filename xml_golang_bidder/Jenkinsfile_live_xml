@@ -1,0 +1,97 @@
+    pipeline{
+        agent any
+        parameters {
+            choice(
+                choices: ['parallel' , 'single'],
+                description: '''Parallel -  It will deply the new build on all nginx respective bidders at a time 
+                            Single - It will deploy new build on 1 nginx respective bidder at a time''',
+                name: 'Deployment_Type')
+            choice(
+                choices:['yes', 'no'],
+                description: 'Take Previous Build Backup',
+                name: 'Backup')
+        }
+        stages{
+        stage('md5sum'){
+            steps{
+                sh "ssh -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 'md5sum /tmp/spdp-xml-server' "
+            }
+        }
+        stage("Check md5sum"){
+            steps{
+                   input "Proceed  if md5sum matches with latest staging build"
+                                                                
+                }
+            }
+        
+        stage('taking current build backup on Jenkins '){
+            steps{
+                sh 'mv  /home2/backup/XML-bidder/spdp-xml-server /home2/backup/XML-bidder/spdp-xml-server_`date "+%Y_%m_%d_%H_%M"`'
+            }
+        }
+        stage('taking previous build backup on Staging Bidders '){
+        when{
+            expression { params.Backup == 'yes' }
+        }
+            steps{
+                sh 'ssh  -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/XML/xml_staging_host --extra-vars "host=staging" /home2/bidder-deployment/XML/xml_bidder_backup.yml"'
+            }
+        }
+        stage('Updating list'){
+            steps{
+                sh ' sudo bash /opt/bidderDeployment/XML/xml_updateAll.sh '
+            }
+        }
+        stage('Creating hostfile'){
+            steps{
+                sh 'ssh  -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo bash /home2/bidder-deployment/XML/xml_create_host.sh"'
+            }
+        }
+        stage('Deployment as  parallel'){
+            when {
+            
+                    expression { params.Deployment_Type == 'parallel' }
+                }
+                parallel {
+                    stage('running for admozart'){
+                        steps{
+                            sh 'ssh  -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/XML/xml_hostfile --extra-vars "host=xml-nginx-admozart" /home2/bidder-deployment/XML/xml_bidder_deployment.yml "'
+                        }
+                    }
+                    stage('running for admida'){
+                        steps{
+                            sh 'ssh  -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/XML/xml_hostfile --extra-vars "host=xml-nginx-admida" /home2/bidder-deployment/XML/xml_bidder_deployment.yml "'
+                        }
+                    }
+                    stage('running for adcanny'){
+                        steps{
+                            sh 'ssh  -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/XML/xml_hostfile --extra-vars "host=xml-nginx-adcanny" /home2/bidder-deployment/XML/xml_bidder_deployment.yml "'
+                        }
+                    }
+                }
+        }
+        stage('Deployment as  single'){
+            when {
+           
+                expression { params.Deployment_Type == 'single' }
+                }
+            steps{
+                sh 'ssh  -i /opt/jenkins-key/jenkins -p 7559 jenkins@192.168.80.199 "sudo ansible-playbook-2 -i /home2/bidder-deployment/XML/xml_hostfile --extra-vars "host=all" /home2/bidder-deployment/XML/xml_bidder_deployment.yml"'
+                }
+            }
+        
+    }
+    post{
+                unsuccessful{
+                  mail to: 'devops@vertoz.com',
+                  subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+                  body: "${env.BUILD_URL} has result ${currentBuild.result}"
+                }
+                
+                success{
+                  mail to: 'devops@vertoz.com',
+                  subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+                  body: "${env.BUILD_URL} has result ${currentBuild.result}"
+              }
+        }
+}

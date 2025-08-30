@@ -1,0 +1,69 @@
+
+pipeline{
+    agent any
+    stages{
+    stage('gitfetch'){
+        steps{
+            git branch: 'huemaster', changelog: false, credentialsId: 'bidderjenkins', poll: false, url: 'http://versioncontrol.vertoz.com/UserInterface/ingenious-plex.git'
+            
+        }
+    }
+    }
+}
+    
+    stage('build'){
+		steps{
+		  sh 'ng build --prod 2>&1 > /tmp/nglog'
+ 		  }
+        }
+        stage('zipping the ingenious-plus'){
+        steps{
+            sh '''
+            cd dist
+            mv ingenious-plex html
+            zip html.zip html/*
+        '''
+        }
+        }
+        stage(' Uploading files'){
+        steps{
+        sh '''
+        
+        md5sum dist/html.zip
+        scp -i /opt/jenkins-key/jenkins -P 7559 dist/html.zip root@23.81.65.237:/tmp
+        scp -i /opt/jenkins-key/jenkins -P 7559 /opt/jenkins-scripts/dsp-live-html-deployment.sh root@23.226.123.200:/tmp
+        ssh  -i /opt/jenkins-key/jenkins -p 7559 root@23.226.123.200 "cp -f /tmp/dsp-live-html-deployment.sh /root"
+        '''
+        }
+    }
+    
+    stage('Deployment'){
+        steps{
+        sh'''
+        ssh  -i /opt/jenkins-key/jenkins -p 7559 root@23.226.123.200 " md5sum /tmp/html.zip 
+"
+         ssh  -i /opt/jenkins-key/jenkins -p 7559 root@23.226.123.200 "bash  /root/dsp-live-html-deployment.sh"
+        '''
+            }
+        
+       }
+    }
+    post{
+                unsuccessful{
+                  mail to: 'devops@vertoz.com',
+                  subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+                  body: "${env.BUILD_URL} has result ${currentBuild.result}"
+                }
+                
+                success{
+                  mail to: 'devops@vertoz.vom',
+                  subject: "Status of pipeline: ${currentBuild.fullDisplayName}",
+                  body: "${env.BUILD_URL} has result ${currentBuild.result}"
+                }
+        }  
+    
+
+
+
+}
+

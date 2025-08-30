@@ -1,0 +1,106 @@
+pipeline {
+    agent any
+
+    tools {
+        nodejs 'node-20' // Must match NodeJS tool name in Jenkins
+    }
+
+    environment {
+        NODE_ENV = 'production'
+    }
+
+    stages {
+
+        stage('Clear Workspace') {
+            steps {
+                deleteDir()
+            }
+        }
+
+        stage('Checkout') {
+            steps {
+                git(
+                    branch: 'dev',
+                    changelog: false,
+                    credentialsId: 'ipjenkins',
+                    poll: false,
+                    url: 'http://versioncontrol.vertoz.com/protecxo_darkdive/darkdive-api.git'
+                )
+            }
+        }
+
+        stage('Install Dependencies') {
+            steps {
+                sh 'npm install'
+            }
+        }
+
+        stage('Build') {
+            steps {
+                sh 'npm install -g @nestjs/cli'
+                sh 'npx nest build'
+                sh 'npm install .' // Local install for dependencies used by the app
+            }
+        }
+
+        stage('Zip Build and Upload to Server') {
+            steps {
+                sh '''
+                    sudo rm -rf /tmp/darkdive_api.tgz
+                    cd $WORKSPACE
+                    tar -zcvf /tmp/darkdive_api.tgz .
+                '''
+            }
+        }
+
+        stage('Upload Archive to Remote Server') {
+            steps {
+                sh '''
+                    sudo ssh -i /opt/jenkins-key/jenkins -p 7559 vrtzadmin@89.105.199.90 'sudo rm -rf /tmp/darkdive_api.tgz'
+                    sudo scp -P 7559 -i /opt/jenkins-key/jenkins /tmp/darkdive_api.tgz vrtzadmin@89.105.199.90:/tmp/
+                '''
+            }
+        }
+
+        stage('Restart PM2 Process') {
+            steps {
+                sh '''
+sudo ssh -i /opt/jenkins-key/jenkins -p 7559 vrtzadmin@89.105.199.90 << 'ENDSSH'
+sudo bash -c '
+APP_DIR="/home2/darkdive-api"
+BACKUP_DIR="/home2/backup"
+PORT=3000
+
+mkdir -p "$APP_DIR"
+chown -R vrtzadmin:vrtzadmin "$APP_DIR"
+
+cd /home2/
+if [ -d "$APP_DIR" ]; then
+    mv "$APP_DIR" "$BACKUP_DIR/darkdive-api$(date '+%y-%m-%d-%H-%M')"
+fi
+
+mkdir -p "$APP_DIR"
+tar -zxvf /tmp/darkdive_api.tgz -C "$APP_DIR"
+
+cd "$APP_DIR"
+npm install --omit=dev
+
+PID=$(lsof -ti tcp:$PORT)
+if [ -n "$PID" ]; then
+    echo "Port $PORT is in use by PID $PID. Killing..."
+    kill -9 $PID
+    sleep 2
+fi
+
+pm2 stop protecxo-api-prod || true
+pm2 delete protecxo-api-prod || true
+sleep 2
+pm2 start npm --name "protecxo-api-prod" -- run start:prod
+pm2 save
+'
+ENDSSH
+                '''
+            }
+        }
+    }
+}
